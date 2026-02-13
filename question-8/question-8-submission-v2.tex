@@ -1,0 +1,334 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{array}
+\usepackage{microtype}
+
+\geometry{margin=1in}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\wstd}{\omega_{\mathrm{std}}}
+\newcommand{\lstd}{\lambda_{\mathrm{std}}}
+
+\title{On the Non-Existence of Lagrangian Smoothings for Polyhedral Surfaces in $\R^4$:\\
+A Computer-Verified Constructive Counterexample in Lean 4}
+\author{Amadeu Zou\\\texttt{amadeuzou@gmail.com}}
+\date{February 12, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We give a constructive negative answer to a natural smoothing question in symplectic topology:
+if a polyhedral Lagrangian surface $K\subset(\R^4,\wstd)$ has exactly four faces meeting at each vertex,
+must $K$ admit a Lagrangian smoothing?
+We explicitly construct an octahedron-like polyhedral surface in standard symplectic $\R^4$,
+verify by exact computation that every triangular face has zero symplectic area, and certify the
+required local combinatorics (four faces at each vertex, two faces at each edge, nondegenerate faces).
+The non-smoothability argument is organized modularly by isolating the only heavy input---a standard
+Gromov-type obstruction (pseudo-holomorphic curves) excluding compact smooth Lagrangian spheres in
+$\R^4$---as an explicit hypothesis parameter.
+All constructive parts are formally verified in Lean 4.
+Code: \url{https://github.com/amadeuzou/1stProof-lean4}.
+\end{abstract}
+
+\section{Introduction and Motivation}
+Polyhedral Lagrangian objects occur naturally as limits of smooth Lagrangian submanifolds,
+for instance under degenerations, surgery constructions, or discretizations.
+A fundamental question is whether such non-smooth Lagrangian surfaces can be smoothed
+through genuine Lagrangian embeddings.
+
+The problem studied here (from \texttt{question-8.tex}) asks:
+
+\begin{quote}
+Let $K$ be a polyhedral Lagrangian surface in $\R^4$ such that exactly $4$ faces meet at every vertex.
+Does $K$ necessarily have a Lagrangian smoothing?
+\end{quote}
+
+Our main message is that the local combinatorial regularity ``four faces per vertex'' does not
+force the existence of a smoothing.
+The reason is global: for some $K$ the existence of a smoothing would imply the existence of
+a compact smooth Lagrangian $2$-sphere in $(\R^4,\wstd)$, which is ruled out by the classical
+pseudo-holomorphic curve theory initiated by Gromov \cite{Gromov1985PseudoHolomorphic}.
+
+A second goal is methodological.
+In informal proofs, the check that all faces of a polyhedron are Lagrangian is often written as
+``a direct (but tedious) computation.''
+We replace this by a \emph{verified computation}: our explicit coordinates are checked symbolically
+inside Lean 4 and also cross-checked by an auxiliary script.
+
+\section{Preliminaries}
+\subsection{Standard symplectic $\R^4$}
+Write $\R^4\cong \R^2\times\R^2$ with coordinates $(x_1,y_1,x_2,y_2)$.
+The standard symplectic form is
+\[
+\wstd = dx_1\wedge dy_1 + dx_2\wedge dy_2.
+\]
+Equivalently, for vectors $u=(u_0,u_1,u_2,u_3)$ and $v=(v_0,v_1,v_2,v_3)$,
+\begin{equation}\label{eq:omega}
+\wstd(u,v)=u_0v_1-u_1v_0+u_2v_3-u_3v_2.
+\end{equation}
+A convenient primitive is a Liouville one-form $\lstd$ with $d\lstd=\wstd$ (any standard choice
+suffices for the exactness discussion below).
+
+\subsection{Polyhedral Lagrangian surfaces}
+We work with finite $2$-dimensional polyhedral (simplicial) complexes embedded in $\R^4$.
+
+\begin{definition}[Face-Lagrangian condition]
+Let $A,B,C\in\R^4$ be vertices of an oriented triangle.
+Define its \emph{symplectic area} by
+\begin{equation}\label{eq:triangle-area}
+\Omega(A,B,C):=\wstd(B-A,\,C-A).
+\end{equation}
+A planar triangle is called \emph{Lagrangian} if $\Omega(A,B,C)=0$.
+A polyhedral surface is \emph{face-Lagrangian} if each of its triangular faces is Lagrangian.
+\end{definition}
+
+For an affine triangle in $\R^4$, the Lagrangian condition for its tangent plane is equivalent to
+\eqref{eq:triangle-area}; hence this is a correct local check for piecewise linear faces.
+
+\subsection{Lagrangian smoothing}
+The problem statement defines a Lagrangian smoothing of $K$ as a Hamiltonian isotopy $K_t$ of
+smooth Lagrangian submanifolds for $t\in(0,1]$ extending to a topological isotopy on $[0,1]$
+with endpoint $K_0=K$.
+In particular, for every $t>0$, $K_t$ is a compact smooth Lagrangian surface homeomorphic to $K$.
+
+\subsection{Gromov-type obstruction (external input)}
+The only non-constructive input in the argument is the following classical obstruction.
+
+\begin{theorem}[Gromov, informal consequence]\label{thm:gromov}
+There is no compact smooth Lagrangian $2$-sphere in standard symplectic $(\R^4,\wstd)$.
+\end{theorem}
+
+\begin{remark}
+A standard route to \autoref{thm:gromov} is:
+(i) if $L\subset(\R^{2n},\wstd)$ is compact Lagrangian then $\lstd|_L$ is closed since
+$d(\lstd|_L)=(d\lstd)|_L=\wstd|_L=0$;
+(ii) if $L\cong S^2$ then $H^1(L)=0$, so $\lstd|_L$ is exact and $L$ is an exact Lagrangian;
+(iii) Gromov \cite{Gromov1985PseudoHolomorphic} implies there is no compact exact Lagrangian in $\R^{2n}$.
+In the Lean formalization we represent \autoref{thm:gromov} by an explicit hypothesis parameter
+\(\texttt{NoCompactLagrangianSphereInR4}\) and keep the constructive core independent of it.
+\end{remark}
+
+\section{Why the Octahedron?}
+A triangulated closed surface in which exactly four triangles meet at every vertex is naturally
+modeled by the boundary of an octahedron: it has six vertices and the vertex degree is exactly four.
+In this sense, the octahedron is the smallest and most symmetric combinatorial candidate satisfying
+``four faces per vertex'' among triangulated spheres.
+
+This motivates using the octahedron combinatorics as the underlying simplicial complex.
+The remaining task is to find an embedding into $\R^4$ for which every triangular face is Lagrangian.
+
+\section{Explicit Construction in $\R^4$}
+\subsection{Vertices}
+We now define six points in $\R^4$:
+\begin{equation}\label{eq:verts}
+\begin{aligned}
+P&=(0,0,0,0), &\qquad N&=(-1,1,-1,1),\\
+Q_1&=(1,0,0,0), & Q_2&=(0,0,1,0),\\
+Q_3&=(0,1,0,0), & Q_4&=(0,0,0,1).
+\end{aligned}
+\end{equation}
+
+\subsection{Faces and edges}
+We take the eight oriented triangular faces (the suspension of a $4$-cycle):
+\begin{equation}\label{eq:faces}
+\begin{aligned}
+&(P,Q_1,Q_2),(P,Q_2,Q_3),(P,Q_3,Q_4),(P,Q_4,Q_1),\\
+&(N,Q_1,Q_2),(N,Q_2,Q_3),(N,Q_3,Q_4),(N,Q_4,Q_1).
+\end{aligned}
+\end{equation}
+The $12$ edges are the obvious pairs connecting $P$ and $N$ to each $Q_i$ and the cycle edges
+$(Q_1,Q_2),(Q_2,Q_3),(Q_3,Q_4),(Q_4,Q_1)$.
+
+\subsection{Local incidence properties}
+\begin{lemma}[Four faces per vertex]
+In the surface defined by \eqref{eq:faces}, exactly four faces are incident to each vertex.
+\end{lemma}
+
+\begin{proof}
+This is checked directly from the face list: $P$ is incident to the four faces in the first line
+of \eqref{eq:faces}, $N$ to the four faces in the second line, and each $Q_i$ appears in exactly four
+faces.
+In Lean this is certified by an explicit incidence list and completeness proof
+(\texttt{octahedron\_four\_faces}).
+\end{proof}
+
+\begin{lemma}[Two faces per edge]
+Every edge is incident to exactly two faces.
+\end{lemma}
+
+\begin{proof}
+Each edge of the equatorial cycle $(Q_i,Q_{i+1})$ is contained in exactly two faces, one with apex $P$
+and one with apex $N$. Similarly, each edge $(P,Q_i)$ (resp. $(N,Q_i)$) lies in the two faces adjacent to
+$Q_i$ in the cycle.
+In Lean this is verified by explicit edge-face incidence lists
+(\texttt{octahedron\_each\_edge\_has\_two\_incident\_faces}).
+\end{proof}
+
+\begin{lemma}[Nondegenerate faces and injective vertex map]
+All triangular faces have three distinct vertices and the vertex coordinate map is injective.
+\end{lemma}
+
+\begin{proof}
+Immediate from the explicit coordinates \eqref{eq:verts}.
+In Lean: \texttt{oct\_face\_distinct\_vertices} and \texttt{OctCoords\_injective}.
+\end{proof}
+
+\subsection{Topology: the underlying surface is a sphere}
+The abstract simplicial complex given by \eqref{eq:faces} is the boundary complex of an octahedron,
+thus a triangulation of $S^2$.
+For bookkeeping we also record the Euler characteristic:
+\[
+\chi = V-E+F = 6-12+8 = 2.
+\]
+In Lean, the combinatorics and local manifold certificates are packaged as
+\texttt{OctTopologicalSubmanifoldCertificate}.
+
+\section{Verified Lagrangian Condition for Each Face}
+\subsection{Symplectic area computation}
+For a face $(A,B,C)$, the Lagrangian condition is $\Omega(A,B,C)=0$ where $\Omega$ is defined
+in \eqref{eq:triangle-area}.
+
+\begin{proposition}[All faces are Lagrangian]\label{prop:faces-lag}
+For each of the eight faces in \eqref{eq:faces}, the symplectic area vanishes.
+Equivalently, the surface is face-Lagrangian.
+\end{proposition}
+
+\begin{proof}
+This is a direct computation using \eqref{eq:omega} and \eqref{eq:verts}.
+For example,
+\[
+\Omega(P,Q_1,Q_2)=\wstd((1,0,0,0),(0,0,1,0))=0,
+\]
+and similarly for the other seven faces.
+
+In Lean, we define \texttt{OctFaceArea} and prove
+\(\forall f,\ \texttt{OctFaceArea}(f)=0\) by exact symbolic evaluation using
+\texttt{fin\_cases} and \texttt{norm\_num}.
+The auxiliary script \texttt{scripts/verify\_octa\_lagrangian.py} prints the face list and confirms all
+areas are exactly $0$.
+\end{proof}
+
+\subsection{Face table}
+For reproducibility, we list the faces and their computed symplectic areas.
+
+\begin{table}[h]
+\centering
+\small
+\begin{tabular}{>{\raggedright}p{0.62\linewidth} >{\centering\arraybackslash}p{0.20\linewidth}}
+\toprule
+Face $(A,B,C)$ & $\Omega(A,B,C)$ \\
+\midrule
+$(P,Q_1,Q_2)$, $(P,Q_2,Q_3)$, $(P,Q_3,Q_4)$, $(P,Q_4,Q_1)$ & $0$ \\
+$(N,Q_1,Q_2)$, $(N,Q_2,Q_3)$, $(N,Q_3,Q_4)$, $(N,Q_4,Q_1)$ & $0$ \\
+\bottomrule
+\end{tabular}
+\caption{All eight faces have vanishing symplectic area.}
+\end{table}
+
+\section{Non-Existence of Lagrangian Smoothing}
+We now explain why this explicit polyhedral Lagrangian surface cannot be smoothed.
+
+\begin{theorem}[Non-smoothability from the Gromov obstruction]\label{thm:main}
+Assume \autoref{thm:gromov}. Then the explicit face-Lagrangian octahedron surface $K$ defined above
+admits no Lagrangian smoothing.
+Consequently, the universal claim
+\[
+\forall K,\ (\text{four faces meet at each vertex})\Rightarrow(\text{$K$ has a Lagrangian smoothing})
+\]
+is false.
+\end{theorem}
+
+\begin{proof}
+Assume for contradiction that $K$ admits a Lagrangian smoothing $(K_t)_{t\in(0,1]}$.
+By definition, for each $t>0$, $K_t$ is a compact smooth Lagrangian surface in $(\R^4,\wstd)$
+and is homeomorphic to $K$.
+Since the underlying simplicial complex of $K$ is a triangulated sphere,
+$K_t$ is a compact smooth Lagrangian $2$-sphere.
+This contradicts \autoref{thm:gromov}.
+\end{proof}
+
+\section{Lean 4 Formalization and Verification Engineering}
+\subsection{Certificate-based formalization}
+Rather than developing a general-purpose PL-manifold library, we use an explicit
+\emph{checkable certificate} for the octahedral surface.
+Concretely, we prove inside Lean:
+\begin{itemize}
+\item four faces per vertex via explicit incidence lists;
+\item two faces per edge via explicit edge incidence;
+\item nondegenerate faces and injective vertex map;
+\item Euler characteristic $\chi=2$ from explicit counts;
+\item vanishing symplectic areas for all faces.
+\end{itemize}
+These are assembled into \texttt{OctTopologicalSubmanifoldCertificate}.
+
+\subsection{Automation: verified computations}
+The Lagrangian checks are performed with Lean's numeric normalization
+(\texttt{norm\_num}) over explicit coordinates.
+This replaces informal ``tedious computations'' by proof terms that compile.
+
+\subsection{Architecture: parameterizing the heavy theorem}
+The core file \texttt{Question8/Core.lean} contains no custom axioms.
+The Gromov input is represented as a hypothesis
+\(h\_{\mathrm{NoSphere}}:\texttt{NoCompactLagrangianSphereInR4}\), and the main contradiction
+lemmas are proved conditionally.
+The file \texttt{Question8/ExternalGromov.lean} provides citation-facing theorem names
+(e.g. \texttt{Question8\_Answer}) that explicitly take this hypothesis parameter.
+This makes the boundary between constructive computation and external symplectic topology precise.
+
+\subsection{AI-assisted workflow}
+The project was completed in an AI-assisted workflow used for:
+(i) decomposing the goal into small lemmas,
+(ii) proposing explicit coordinate candidates,
+(iii) iteratively repairing Lean proof scripts until \texttt{lake build} succeeded,
+and (iv) producing reproducibility scripts and manuscript text.
+
+\section{Discussion and Open Problems}
+\subsection{Beyond the sphere case}
+The obstruction used here is specific to the spherical topology.
+For other topological types, e.g. Lagrangian tori in $\R^4$, Gromov's theorem does not rule out
+existence, and smoothing questions may have a different answer.
+A natural open direction is:
+\begin{quote}
+If $K$ is a polyhedral face-Lagrangian torus in $\R^4$ with four faces meeting at each vertex,
+when does it admit a Lagrangian smoothing?
+\end{quote}
+
+\subsection{Oracle-based formalization}
+This development illustrates a general formalization strategy:
+keep constructive geometry fully verified, and isolate deep external theorems as explicit parameters
+(or cited theorems) with minimal interfaces.
+This resembles formal workflows in other problems where a heavy external result (e.g. Smith theory)
+serves as an ``oracle'' in the final contradiction.
+
+\section*{Reproducibility}
+The repository \url{https://github.com/amadeuzou/1stProof-lean4} contains the Lean files and scripts.
+A one-shot verification command is:
+\begin{verbatim}
+./scripts/verify_formal_status.sh
+\end{verbatim}
+It runs \texttt{lake build}, checks absence of \texttt{axiom}/\texttt{sorry}/\texttt{admit},
+and executes a geometry sanity checker.
+
+\bibliographystyle{plain}
+\bibliography{question-8-references}
+
+\end{document}
