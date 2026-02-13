@@ -1,4 +1,4 @@
-# Formalizing [1stproof](https://1stproof.org/) Question 10 in Lean 4
+# Formalizing Question 10 in Lean 4
 
 ## What this repository solves
 This project formalizes the mode-\(k\) RKHS-constrained CP subproblem with missing tensor entries, based on `question-10.tex`.  
@@ -20,12 +20,25 @@ source "$HOME/.elan/env"
 lean --version
 lake update
 lake build
-rg -n "sorry" Question10 *.lean
+rg -n "sorry|admit" Question10 *.lean
+rg -n "axiom" Question10 *.lean
 ```
 
 Expected result:
 - `lake build` succeeds
-- `rg` finds no `sorry`
+- `rg` finds no `sorry`/`admit`
+- `rg` finds no custom `axiom` declarations
+
+## Current formal status
+- Fully mechanized in Lean:
+  - operator/SPD/cost chain
+  - Section-4 spectral bridge chain
+  - Section-5 logarithmic-to-geometric step:
+    `geometric_term_le_eps_of_kEps`
+  - direct budgeted error theorem:
+    `error_bound_at_kEps`
+- Still provided as an input assumption:
+  - the standard PCG contraction premise (`hContract`)
 
 ## Code structure and files
 - `Question10/Defs.lean`: core data model, observation indexing, and system operator definitions.
@@ -33,6 +46,7 @@ Expected result:
 - `Question10/PCG.lean`: Frobenius-inner-product framework, SPD lemmas, and PCG admissibility theorems.
 - `Question10/Complexity.lean`: per-iteration/total cost formulas and Big-O-style abstractions.
 - `Question10/Main.lean`: bundled top-level theorem statements.
+- `question-10-lean4.md`: Chinese explanation mapping math to Lean.
 - `question-10-lean4-en.md`: English explanation mapping math to Lean.
 - `question-10-paper.tex` / `question-10-paper.pdf`: paper-style writeup and compiled PDF.
 - `question-10.tex`: original problem statement.

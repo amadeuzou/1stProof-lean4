@@ -5,6 +5,7 @@
 \usepackage{bm}
 \usepackage{enumitem}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{hyperref}
 \hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
 
@@ -18,258 +19,397 @@
 \newtheorem{remark}{Remark}
 
 \newcommand{\R}{\mathbb{R}}
-\newcommand{\vecop}{\mathrm{vec}}
-\newcommand{\tr}{\mathrm{tr}}
+\newcommand{\vecop}{\operatorname{vec}}
+\newcommand{\tr}{\operatorname{tr}}
 \newcommand{\ot}{\otimes}
-\newcommand{\fro}[1]{\left\langle #1 \right\rangle_F}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
 \newcommand{\normf}[1]{\left\lVert #1 \right\rVert_F}
+\newcommand{\kappacond}{\kappa}
 
-\title{A Formally Verified PCG Framework for RKHS-Constrained\\
-Mode-$k$ CP Updates with Missing Tensor Entries}
+\title{Certified Efficient Algorithms for Tensor Completion:\\
+A Formally Verified PCG Approach with Explicit Complexity Bounds}
 \author{Amadeu Zou\\
-\texttt{amadeuzou@gmail.com}\\
-\small Lean4 code: \url{https://github.com/amadeuzou/1stProof-lean4}}
-\date{February 12 2026}
+\texttt{amadeuzou@gmail.com}}
+\date{February 13, 2026}
 
 \begin{document}
 \maketitle
 
 \begin{abstract}
-We study the mode-$k$ linear subproblem arising in alternating optimization for CP decomposition with missing tensor entries and RKHS constraints. The unknown factor is parameterized as $A_k=KW$, where $K\in\R^{n\times n}$ is a kernel Gram matrix and $W\in\R^{n\times r}$ is the optimization variable. The normal equation has size $nr\times nr$ and is prohibitively expensive to solve by direct dense methods. We present an operator-based preconditioned conjugate gradient (PCG) scheme that avoids any $\mathcal O(N)$ work with $N=\prod_i n_i$. We derive explicit matrix--vector application formulas from observed entries only, establish per-iteration complexity bounds, and prove strict improvement over ambient-size enumeration when $q<nM$ ($q$: observed entries, $M=\prod_{i\neq k}n_i$). We also prove PCG admissibility under structured assumptions (symmetry and positivity of data and kernel-induced operators, plus $\lambda>0$). The full proof chain is formalized and machine-checked in Lean~4/mathlib (no \texttt{sorry}, successful build), and we map each mathematical statement to the corresponding formal theorem.
+We revisit the mode-$k$ linear subproblem in CP tensor completion with missing entries under RKHS constraints. The unknown factor is parameterized by $A_k=KW$, where $K\in\R^{n\times n}$ is a kernel Gram matrix and $W\in\R^{n\times r}$ is the optimization variable. Instead of forming an $nr\times nr$ normal matrix explicitly, we use an observation-driven operator formulation and solve by preconditioned conjugate gradients (PCG). The first contribution is a complete Lean 4 formalization of solver admissibility (SPD structure) and arithmetic complexity identities for matvec, iteration, and total cost. The second contribution is a theoretical v2 extension: we derive condition-number bounds that expose dependence on regularization $\lambda$ and observation density $\rho=q/N$, and we convert them into explicit iteration bounds for target accuracy $\varepsilon$. The third contribution is methodological: we connect the verified operator framework to mainstream tensor completion methods (ALS/SGD), explain what is mathematically different, and discuss transfer to Tucker and tensor-train updates. We also give a reproducible numerical protocol (non-formal) to validate runtime scaling predictions. The paper separates machine-checked theorems from mathematical extensions not yet formalized, providing a rigorous and transparent path toward a fully certified algorithmic theory. Lean4 code and formal artifacts: \url{https://github.com/amadeuzou/1stProof-lean4}.
 \end{abstract}
 
 \section{Introduction}
-Consider a $d$-way tensor $\mathcal T\in\R^{n_1\times\cdots\times n_d}$ with missing entries. In alternating CP updates, fixing all factors except mode $k$ yields a linear subproblem for the mode-$k$ factor. In RKHS-constrained variants, one writes
+Let $\mathcal T\in\R^{n_1\times\cdots\times n_d}$ be a partially observed tensor. In alternating CP optimization, fixing all factors except mode $k$ yields a linear subproblem. Under RKHS constraints one writes
 \[
 A_k = KW,
 \]
-where $K\in\R^{n\times n}$ is a positive semidefinite Gram matrix ($n=n_k$), and $W\in\R^{n\times r}$ is the unknown.
+where $K\in\R^{n\times n}$ ($n=n_k$) is a kernel matrix and $W\in\R^{n\times r}$ is unknown.
 
-With the standard notation
+Define
 \[
-N=\prod_{i=1}^d n_i,\qquad M=\prod_{i\neq k}n_i,\qquad q\ll N,
+N=\prod_{i=1}^d n_i,\qquad M=\prod_{i\neq k}n_i,\qquad q=|\Omega|\ll N,
 \]
-and with $Z\in\R^{M\times r}$ the Khatri--Rao product of the fixed factors, the mode-$k$ normal equation is
+where $\Omega$ is the observed set. The classical normal equation has size $nr\times nr$:
 \begin{equation}
-\label{eq:normal}
+\label{eq:normal-v2}
 \Big[(Z\ot K)^T S S^T (Z\ot K) + \lambda (I_r\ot K)\Big]\vecop(W)
 = (I_r\ot K)\vecop(B),
 \end{equation}
-where $B=TZ$, $T$ is the mode-$k$ unfolding with missing entries filled by zero, and $S$ selects observed entries.
+with $Z\in\R^{M\times r}$ (Khatri--Rao side factor), selection matrix $S$, and $B=TZ$.
 
-A direct dense solve costs $\mathcal O(n^3r^3)$, and explicitly forming the coefficient matrix is itself expensive. Our goal is an iterative solver with observed-entry complexity.
+Direct dense solution is expensive in both memory and arithmetic. The central strategy here is to work only with operator actions over observed entries.
 
-\paragraph{Contributions.}
+\paragraph{Contributions of this v2 manuscript.}
 \begin{enumerate}[leftmargin=1.5em]
-\item We derive an operator form whose application uses only observed entries.
-\item We provide explicit per-application and per-PCG-iteration complexity formulas.
-\item We prove SPD-based PCG admissibility from structured assumptions.
-\item We provide a machine-checked Lean~4 formalization of the proof chain.
+\item \textbf{Certified operator framework.} We encode the mode-$k$ system operator and PCG admissibility in Lean 4/mathlib with no placeholders.
+\item \textbf{Explicit complexity formulas.} We formally verify arithmetic identities for one system matvec, one PCG step, and total cost.
+\item \textbf{Condition-number theory.} We derive upper/lower spectral bounds and an explicit condition-number estimate depending on $(\lambda,\rho)$.
+\item \textbf{Convergence-to-accuracy complexity.} We derive a closed-form iteration bound $k_\varepsilon$ and a corresponding total arithmetic complexity bound.
+\item \textbf{Algorithmic context and transferability.} We compare with ALS/SGD and discuss operator-level generalization to Tucker/TT settings.
 \end{enumerate}
 
-\section{Problem Setup and Observation-Driven Operator}
-Let observed pairs be indexed by
+\section{Observation-Driven Operator Formulation}
+Let the observed index list be
 \[
 \Omega = \{(i_p,m_p)\}_{p=1}^q \subseteq [n]\times[M].
 \]
-For $X\in\R^{n\times r}$, define
+For $X\in\R^{n\times r}$ define
 \begin{equation}
-\label{eq:sample-score}
-s_p(X) := \sum_{t=1}^r (KX)_{i_p t} Z_{m_p t}.
+\label{eq:sample-score-v2}
+s_p(X) := \sum_{t=1}^r (KX)_{i_p t} Z_{m_p t},
 \end{equation}
-Define the data term $D(X)\in\R^{n\times r}$ by
+and
 \begin{equation}
-\label{eq:data-term}
+\label{eq:data-term-v2}
 [D(X)]_{j\ell}
 := \sum_{p=1}^q K_{j i_p}\, Z_{m_p \ell}\, s_p(X).
 \end{equation}
-Then define the system operator
+Set
 \begin{equation}
-\label{eq:system-op}
-A(X) := D(X) + \lambda KX.
+\label{eq:system-op-v2}
+A(X):=D(X)+\lambda KX.
 \end{equation}
 The right-hand side is $\mathrm{RHS}=KB$.
 
-\begin{proposition}[Operator realization of \eqref{eq:normal}]
-\label{prop:operator-realization}
+\begin{proposition}[Operator realization]
+\label{prop:operator-realization-v2}
 For all $X\in\R^{n\times r}$,
 \[
 \vecop(A(X))
-= \Big[(Z\ot K)^T S S^T (Z\ot K) + \lambda (I_r\ot K)\Big]\vecop(X).
+=\Big[(Z\ot K)^T S S^T (Z\ot K)+\lambda(I_r\ot K)\Big]\vecop(X).
 \]
-Hence solving \eqref{eq:normal} is equivalent to solving $A(W)=KB$.
+Hence solving \eqref{eq:normal-v2} is equivalent to solving $A(W)=KB$.
 \end{proposition}
 
 \begin{proof}
-By the mixed-product and vectorization identities,
-\[
-\vecop(KX)= (I_r\ot K)\vecop(X).
-\]
-The selection matrix $S$ restricts to observed entries. Expanding
-$ (Z\ot K)^T S S^T (Z\ot K)\vecop(X)$ entrywise yields exactly
-\eqref{eq:sample-score}--\eqref{eq:data-term}. Therefore the first term equals
-$\vecop(D(X))$, and adding the regularizer gives $\vecop(A(X))$.
+Use $\vecop(KX)=(I_r\ot K)\vecop(X)$. Expanding the observed part
+$(Z\ot K)^T S S^T (Z\ot K)\vecop(X)$ entrywise yields exactly
+\eqref{eq:sample-score-v2}--\eqref{eq:data-term-v2}. Therefore the first term equals
+$\vecop(D(X))$, and adding regularization gives the claim.
 \end{proof}
 
-\section{Matrix--Vector Product Complexity}
-The key implementation principle is to apply $A(\cdot)$ without forming any $nr\times nr$ matrix.
+\section{Verified Arithmetic Complexity}
+The key implementation applies $A(\cdot)$ without forming an $nr\times nr$ matrix.
 
-\subsection*{Computation pattern}
+\subsection*{One operator application}
 For input $X$:
 \begin{enumerate}[leftmargin=1.5em]
-\item Compute $Y=KX$ (cost $n^2r$ arithmetic operations).
-\item For each $p\in\{1,\dots,q\}$, compute $s_p(X)$ via \eqref{eq:sample-score}
-      (cost $2r$ in the adopted operation model).
-\item Accumulate \eqref{eq:data-term} over $(j,\ell)$ (cost $nr$ per observation, i.e. $qnr$ total).
+\item Compute $Y=KX$ (cost $n^2r$).
+\item Compute all $s_p(X)$ (cost $q\cdot 2r$ in the adopted operation model).
+\item Accumulate \eqref{eq:data-term-v2} (cost $q\cdot nr$).
 \item Add $\lambda Y$.
 \end{enumerate}
 
-This yields the formal cost identity below.
-
-\begin{theorem}[Per-application cost]
-\label{thm:matvec-cost}
-In the operation model above,
+\begin{theorem}[Per-matvec cost, formalized]
+\label{thm:matvec-cost-v2}
 \begin{equation}
-\label{eq:matvec-cost}
-C_{\mathrm{mv}}
-= q(2r+nr) + n^2r.
+\label{eq:cmv-v2}
+C_{\mathrm{mv}} = q(2r+nr)+n^2r.
 \end{equation}
-Moreover, with ambient size $N=nM$,
+Moreover, with $N=nM$,
 \begin{equation}
-\label{eq:matvec-upper-ambient}
-C_{\mathrm{mv}} \le nM(2r+nr)+n^2r,
+\label{eq:cmv-ambient-v2}
+C_{\mathrm{mv}}\le nM(2r+nr)+n^2r,
 \end{equation}
-and if $q<nM$, then
+and if $q<nM$ then strict improvement holds:
 \begin{equation}
-\label{eq:matvec-strict}
-C_{\mathrm{mv}} < nM(2r+nr)+n^2r.
+\label{eq:cmv-strict-v2}
+C_{\mathrm{mv}}<nM(2r+nr)+n^2r.
 \end{equation}
 \end{theorem}
 
 \begin{proof}
-The decomposition of work above gives \eqref{eq:matvec-cost} directly. Since
-$q\le nM$, multiplying by $(2r+nr)>0$ gives \eqref{eq:matvec-upper-ambient}; strict
-inequality follows when $q<nM$.
+The identity follows by summing the operation counts above. The bound and strict bound are immediate from $q\le nM$ and $q<nM$.
 \end{proof}
 
-\section{PCG and Preconditioner Theory}
-We work on $\R^{n\times r}$ with Frobenius inner product
-\[
-\langle X,Y\rangle_F := \sum_{i=1}^n\sum_{j=1}^r X_{ij}Y_{ij}.
-\]
-
-\begin{definition}[Symmetry and positivity]
-For a linear operator $\mathcal L:\R^{n\times r}\to\R^{n\times r}$:
-\begin{align*}
-\mathcal L\text{ is symmetric } &\iff
-\langle \mathcal L(X),Y\rangle_F = \langle X,\mathcal L(Y)\rangle_F\ \forall X,Y,\\
-\mathcal L\text{ is positive definite } &\iff
-\langle \mathcal L(X),X\rangle_F>0\ \forall X\neq 0,\\
-\mathcal L\text{ is SPD } &\iff \text{symmetric and positive definite}.
-\end{align*}
-\end{definition}
-
-Choose the block preconditioner
+\subsection*{One PCG iteration}
+The verified operation model gives
+\begin{align}
+C_{\mathrm{prec}} &= n^2r,\label{eq:cprec-v2}\\
+C_{\mathrm{vec}} &= 6nr,\label{eq:cvec-v2}\\
+C_{\mathrm{iter}} &= C_{\mathrm{mv}}+C_{\mathrm{prec}}+C_{\mathrm{vec}}
+\nonumber\\
+&= q(2r+nr)+2n^2r+6nr.\label{eq:citer-v2}
+\end{align}
+For $k$ iterations,
 \begin{equation}
-\label{eq:preconditioner}
-P_\mu := I_r\ot (K+\mu I_n),\qquad \mu>0,
+\label{eq:ctotal-k-v2}
+C_{\mathrm{total}}(k)=k\,C_{\mathrm{iter}}.
 \end{equation}
-whose matrix action is
-\[
-M_\mu(X)=(K+\mu I_n)X=KX+\mu X.
-\]
-We take $\mu=\lambda$.
 
-\begin{assumption}[Structured operator hypotheses]
-\begin{enumerate}[leftmargin=1.5em,label=(A\arabic*)]
-\item $D$ is symmetric:
-      \[
-      \langle D(X),Y\rangle_F=\langle X,D(Y)\rangle_F.
-      \]
-\item $D$ is positive semidefinite: $\langle D(X),X\rangle_F\ge 0$ for all $X$.
-\item $K$-multiplication operator $X\mapsto KX$ is symmetric.
-\item $K$-multiplication operator is positive definite.
-\item $\lambda>0$.
+\section{Condition Number Analysis and Dependence on \texorpdfstring{$(\lambda,\rho)$}{(lambda,rho)}}
+This section strengthens mathematical depth beyond basic SPD admissibility.
+
+\subsection*{Gram decomposition}
+Let $k_i\in\R^n$ denote row $i$ of $K$, $z_m\in\R^r$ row $m$ of $Z$, and define
+\[
+\phi_p := z_{m_p}\ot k_{i_p}\in\R^{nr}.
+\]
+Build $F\in\R^{q\times nr}$ with row $p$ equal to $\phi_p^T$. Then
+\begin{equation}
+\label{eq:ahat-decomp}
+\widehat A := F^TF + \lambda(I_r\ot K),
+\end{equation}
+which is the matrix form of $A$ under vectorization.
+
+\begin{assumption}[Spectral and feature bounds]
+\begin{enumerate}[leftmargin=1.5em,label=(B\arabic*)]
+\item $K$ is SPD, with eigenvalues $0<\mu_{\min}\le\mu_{\max}$.
+\item There exist constants $L_K,L_Z>0$ such that
+\[
+\norm{k_i}_2\le L_K\quad\forall i\in[n],\qquad \norm{z_m}_2\le L_Z\quad\forall m\in[M].
+\]
 \end{enumerate}
 \end{assumption}
 
-\begin{theorem}[System operator is SPD]
-\label{thm:system-spd}
-Under (A1)--(A5), the operator $A(X)=D(X)+\lambda KX$ is SPD.
+\begin{theorem}[Eigenvalue sandwich]
+\label{thm:eigen-sandwich}
+Under the spectral and feature bounds above,
+\begin{equation}
+\label{eq:lambda-min-bound}
+\lambda_{\min}(\widehat A)\ge \lambda\mu_{\min},
+\end{equation}
+and
+\begin{equation}
+\label{eq:lambda-max-bound}
+\lambda_{\max}(\widehat A)\le qL_K^2L_Z^2 + \lambda\mu_{\max}.
+\end{equation}
+Hence
+\begin{equation}
+\label{eq:kappa-bound-main}
+\kappacond(\widehat A)
+\le
+\frac{qL_K^2L_Z^2 + \lambda\mu_{\max}}{\lambda\mu_{\min}}.
+\end{equation}
 \end{theorem}
 
 \begin{proof}
-Symmetry: $D$ is symmetric by (A1), $X\mapsto KX$ is symmetric by (A3), scalar multiplication preserves symmetry, and sums of symmetric operators are symmetric.
+Since $F^TF\succeq 0$, we have
+$\lambda_{\min}(\widehat A)\ge\lambda_{\min}(\lambda(I_r\ot K))=\lambda\mu_{\min}$,
+proving \eqref{eq:lambda-min-bound}.
 
-Positive definiteness: for $X\neq 0$,
+For the upper bound,
 \[
-\langle A(X),X\rangle_F
-= \langle D(X),X\rangle_F + \lambda\langle KX,X\rangle_F.
+\lambda_{\max}(\widehat A)
+\le \lambda_{\max}(F^TF)+\lambda\lambda_{\max}(I_r\ot K)
+= \lambda_{\max}(F^TF)+\lambda\mu_{\max}.
 \]
-By (A2), the first term is nonnegative. By (A4), $\langle KX,X\rangle_F>0$. By (A5), $\lambda>0$. Therefore $\langle A(X),X\rangle_F>0$.
+Also,
+\[
+\lambda_{\max}(F^TF)\le \tr(F^TF)=\sum_{p=1}^q \norm{\phi_p}_2^2
+\le qL_K^2L_Z^2,
+\]
+because $\norm{\phi_p}_2=\norm{z_{m_p}}_2\norm{k_{i_p}}_2\le L_ZL_K$.
+Substituting gives \eqref{eq:lambda-max-bound}, and dividing by
+\eqref{eq:lambda-min-bound} yields \eqref{eq:kappa-bound-main}.
 \end{proof}
 
-\begin{theorem}[Default preconditioner is SPD]
-\label{thm:prec-spd}
-Under (A3)--(A5), $M_\lambda(X)=(K+\lambda I_n)X$ is SPD.
-\end{theorem}
-
-\begin{proof}
-Symmetry follows from symmetry of $X\mapsto KX$ and identity. For $X\neq 0$,
-\[
-\langle M_\lambda(X),X\rangle_F
-= \langle KX,X\rangle_F + \lambda\normf{X}^2.
-\]
-By (A4), the first term is positive; by (A5), the second is nonnegative and strict when $X\neq 0$. Hence positivity holds.
-\end{proof}
-
-\begin{corollary}[PCG admissibility]
-\label{cor:pcg-admissible}
-Under (A1)--(A5), PCG with operator $A$ and preconditioner $M_\lambda$ is admissible.
+\begin{corollary}[Observation density form]
+\label{cor:density-form}
+Let $\rho:=q/N$ with $N=nM$. Then
+\begin{equation}
+\label{eq:kappa-density}
+\kappacond(\widehat A)
+\le
+\frac{\rho nM L_K^2L_Z^2 + \lambda\mu_{\max}}{\lambda\mu_{\min}}.
+\end{equation}
 \end{corollary}
 
-\begin{proof}
-By Theorems~\ref{thm:system-spd} and~\ref{thm:prec-spd}, both operators are SPD, which is the standard admissibility condition for PCG.
-\end{proof}
+\begin{remark}[Regularization tradeoff]
+Larger $\lambda$ improves the lower spectral bound $\lambda\mu_{\min}$ and typically decreases condition number. Excessively large $\lambda$ may, however, oversmooth the statistical objective. Equation~\eqref{eq:kappa-density} makes this computational tradeoff explicit.
+\end{remark}
 
-\section{Per-Iteration and Total Complexity}
-Besides one application of $A$, one PCG step includes a preconditioner solve/apply and vector updates.
-Using the verified operation model:
-\begin{align}
-C_{\mathrm{prec}} &= n^2r,\label{eq:cprec}\\
-C_{\mathrm{vec}} &= 6nr,\label{eq:cvec}\\
-C_{\mathrm{iter}} &= C_{\mathrm{mv}} + C_{\mathrm{prec}} + C_{\mathrm{vec}}\nonumber\\
-&= q(2r+nr) + 2n^2r + 6nr.\label{eq:citer}
-\end{align}
-Therefore, for $k$ PCG iterations,
+\section{PCG Convergence Rate and \texorpdfstring{$\varepsilon$}{epsilon}-Complexity}
+In the Frobenius inner product space, define the preconditioner
+\[
+P_\mu = I_r\ot(K+\mu I_n),\qquad \mu>0.
+\]
+The Lean development proves SPD admissibility for $A$ and for the default choice $\mu=\lambda$ under structured assumptions (symmetry/positivity and $\lambda>0$).
+
+Let
+\[
+\widetilde A := P_\mu^{-1/2}\widehat A P_\mu^{-1/2},
+\qquad
+\kappa_P := \kappacond(\widetilde A).
+\]
+
+\begin{theorem}[Standard PCG error contraction]
+\label{thm:pcg-rate-v2}
+For exact-arithmetic PCG iterates $x_k$ solving $\widehat A x=b$,
 \begin{equation}
-\label{eq:ctotal}
-C_{\mathrm{total}}(k)=k\,C_{\mathrm{iter}}.
+\label{eq:pcg-rate}
+\norm{x_k-x_*}_{\widehat A}
+\le
+2\left(\frac{\sqrt{\kappa_P}-1}{\sqrt{\kappa_P}+1}\right)^k
+\norm{x_0-x_*}_{\widehat A}.
 \end{equation}
-No step requires iterating over all $N=\prod_i n_i$ tensor entries.
+Therefore, to ensure
+$\norm{x_k-x_*}_{\widehat A}\le\varepsilon\norm{x_0-x_*}_{\widehat A}$,
+it suffices that
+\begin{equation}
+\label{eq:keps-main}
+k\ge
+k_\varepsilon:=
+\left\lceil
+\frac{\log(2/\varepsilon)}{\log\left(\frac{\sqrt{\kappa_P}+1}{\sqrt{\kappa_P}-1}\right)}
+\right\rceil.
+\end{equation}
+\end{theorem}
 
-\section{Lean Formalization Map}
-The formal development is in Lean~4/mathlib and compiles with no placeholders.
+\begin{corollary}[Arithmetic complexity to target accuracy]
+\label{cor:eps-complexity}
+Using \eqref{eq:citer-v2} and \eqref{eq:keps-main},
+\begin{equation}
+\label{eq:total-eps-cost}
+C_{\mathrm{total}}(\varepsilon)
+\le
+k_\varepsilon\big(q(2r+nr)+2n^2r+6nr\big).
+\end{equation}
+Hence
+\[
+C_{\mathrm{total}}(\varepsilon)
+=\mathcal O\!\left((qnr+n^2r)\sqrt{\kappa_P}\log\frac{1}{\varepsilon}\right),
+\]
+up to lower-order linear terms in $nr$.
+\end{corollary}
 
+\section{Positioning Against ALS/SGD and Generalizability}
+\subsection*{Comparison to common tensor-completion updates}
 \begin{center}
-\begin{tabular}{@{}p{0.42\linewidth}p{0.5\linewidth}@{}}
+\begin{tabular}{@{}p{0.2\linewidth}p{0.34\linewidth}p{0.4\linewidth}@{}}
 \toprule
-Mathematical statement & Lean theorem/file \\
+Method & Computational profile & Theoretical/computational characteristic \\
 \midrule
-Observation-driven operator and dimensions & \texttt{Question10/Defs.lean} \\
-Matvec cost formula \eqref{eq:matvec-cost} & \texttt{costSystemMatVec\_eq} in \texttt{SparseMatVec.lean} \\
-Upper/strict bound \eqref{eq:matvec-upper-ambient},\eqref{eq:matvec-strict} &
-\texttt{costSystemMatVec\_le\_ambient\_scaled}, \texttt{...\_lt\_...} \\
-System SPD from structured assumptions & \texttt{spd\_systemOp\_of\_assumptions} in \texttt{PCG.lean} \\
-Preconditioner SPD & \texttt{spd\_preconditioner\_of\_kernel\_assumptions} in \texttt{PCG.lean} \\
-PCG admissibility & \texttt{pcg\_ready\_fully\_structured} in \texttt{PCG.lean} \\
-Main bundled theorem & \texttt{main\_solver\_statement} in \texttt{Main.lean} \\
-Per-iteration and total cost identities & \texttt{costPCGIter\_eq}, \texttt{totalCost\_eq} in \texttt{Complexity.lean} \\
+ALS (exact subsolve) & Typically solves normal equations directly (or via dense linear algebra) per block & Strong per-block decrease but may require expensive matrix formation/factorization in RKHS-coupled settings \\
+SGD / stochastic updates & Low per-sample step cost & Requires stepsize schedules; convergence sensitivity and variance can dominate runtime \\
+Operator-PCG (this work) & Observation-driven matvec $+\,$SPD preconditioner, no explicit $nr\times nr$ matrix & Deterministic linear-system perspective, explicit iteration complexity via condition number \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection*{Transfer to Tucker and Tensor Train}
+The same blueprint extends whenever a mode/local subproblem has normal-equation form
+\[
+\widehat A_{\mathrm{local}}x = b,
+\qquad
+\widehat A_{\mathrm{local}} = F_{\mathrm{local}}^TF_{\mathrm{local}} + \lambda G.
+\]
+For Tucker, $F_{\mathrm{local}}$ arises from Kroneckerized fixed factors. For TT, it comes from left/right environment contractions. In both cases, key tasks are: (i) observation-driven evaluation of $F_{\mathrm{local}}^T(F_{\mathrm{local}}x)$, (ii) proving SPD of $G$, and (iii) controlling local condition numbers.
+
+\section{Formalization Methodology in Lean 4}
+This project treats formal verification as part of mathematical methodology.
+
+\paragraph{(i) Dimension-safe modeling.}
+Unknowns are represented as
+\[
+\texttt{Matrix (Fin n) (Fin r) Real},
+\]
+and observation maps as
+\[
+\texttt{obs : Fin q -> Fin n * Fin M}.
+\]
+This makes index domains explicit and prevents out-of-range errors by construction.
+
+\paragraph{(ii) Operator-first encoding.}
+Instead of materializing a giant normal matrix, Lean definitions use
+\texttt{sampleScore}, \texttt{dataTerm}, and \texttt{systemOp}. This mirrors efficient implementation and keeps proofs aligned with runtime reality.
+
+\paragraph{(iii) Structured proof interfaces.}
+Predicates \texttt{Symmetric}, \texttt{PosDef}, \texttt{PosSemidef}, and \texttt{SPD} isolate algebraic assumptions from algorithmic conclusions. The theorem
+\texttt{pcg\_ready\_fully\_structured}
+composes these assumptions into PCG admissibility.
+
+\paragraph{(iv) Certified operation counting.}
+Costs are formalized as natural-number expressions (e.g., \texttt{costSystemMatVec}, \texttt{costPCGIter}, \texttt{totalCost}), enabling machine-checked arithmetic identities and monotonicity arguments.
+
+\section{Numerical Experiments (Non-formal but Reproducible)}
+The following protocol is recommended to empirically validate the theory.
+
+\subsection*{Goals}
+\begin{enumerate}[leftmargin=1.5em]
+\item Verify near-linear runtime growth in $q$ at fixed $(n,r)$.
+\item Measure iteration counts versus $\lambda$ and compare with the condition-number trend.
+\item Compare wall-clock behavior against a dense normal-equation baseline on small/medium instances.
+\end{enumerate}
+
+\subsection*{Protocol}
+\begin{enumerate}[leftmargin=1.5em]
+\item \textbf{Synthetic dimensions:}
+$n\in\{200,500,1000\}$, $r\in\{10,20\}$, and fixed $M$ per suite.
+\item \textbf{Observation density:}
+$\rho=q/(nM)\in\{0.1\%,0.5\%,1\%,5\%\}$.
+\item \textbf{Regularization sweep:}
+$\lambda\in\{10^{-4},10^{-3},10^{-2},10^{-1}\}$.
+\item \textbf{Stopping rule:}
+relative preconditioned residual $\le 10^{-6}$.
+\item \textbf{Metrics:}
+matvec time, per-iteration time, total runtime, iteration count, final residual.
+\end{enumerate}
+
+\subsection*{Falsifiable hypotheses}
+\begin{enumerate}[leftmargin=1.5em,label=(H\arabic*)]
+\item Runtime per iteration scales approximately linearly with $q$ (from \eqref{eq:citer-v2}).
+\item Increasing $\lambda$ reduces iterations in regimes where regularization dominates the smallest eigenvalue.
+\item The operator-PCG method outperforms dense normal-equation solves once $q\ll N$.
+\end{enumerate}
+
+\section{Lean Theorem Map and Formal Status}
+\begin{center}
+\begin{tabular}{@{}p{0.42\linewidth}p{0.38\linewidth}p{0.14\linewidth}@{}}
+\toprule
+Statement & Lean artifact & Status \\
+\midrule
+Observation-driven operator definitions & \texttt{Question10/Defs.lean} & Formalized \\
+Matvec cost identity \eqref{eq:cmv-v2} & \texttt{costSystemMatVec\_eq} & Formalized \\
+Ambient bound/strict improvement & \texttt{costSystemMatVec\_le\_ambient\_scaled}, \texttt{...\_lt\_...} & Formalized \\
+System SPD from structured assumptions & \texttt{spd\_systemOp\_of\_assumptions} & Formalized \\
+Preconditioner SPD & \texttt{spd\_preconditioner\_of\_kernel\_assumptions} & Formalized \\
+PCG admissibility & \texttt{pcg\_ready\_fully\_structured} & Formalized \\
+Per-iteration and total cost formulas & \texttt{costPCGIter\_eq}, \texttt{totalCost\_eq} & Formalized \\
+Condition-number bridge from extremal assumptions & \texttt{kappaFromExtremes\_le\_kappaUpperFromCount} (\texttt{SpectralConvergence.lean}) & Formalized \\
+Structured spectral-assumption package and bundled bounds & \texttt{SpectralAssumptions.eigen\_sandwich}, \texttt{...kappa\_bound\_count} & Formalized \\
+Matrix-level positivity chain for regularized normal matrix & \texttt{gramMatrix\_posSemidef}, \texttt{regularizedNormalMatrix\_posDef} & Formalized \\
+Quadratic-form lower/upper envelopes for regularized normal matrix & \texttt{regularizedNormalMatrix\_quad\_lower}, \texttt{...quad\_upper} & Formalized \\
+Feature-bound to explicit $qL_K^2L_Z^2$ Gram-envelope bridge & \texttt{gramMatrix\_quad\_upper\_of\_feature\_bounds\_q} & Formalized \\
+Kronecker row-factorization norm bound & \texttt{rowNormSq\_kron\_le\_product\_bounds} & Formalized \\
+Factorized-feature to explicit $qL_K^2L_Z^2$ bridge & \texttt{gramMatrix\_quad\_upper\_of\_factorized\_feature\_bounds\_q} & Formalized \\
+Observed-map plus factor-matrix to explicit $qL_K^2L_Z^2$ bridge & \texttt{gramMatrix\_quad\_upper\_of\_observed\_factor\_matrices\_q} & Formalized \\
+Quadratic-form envelopes to eigenvalue sandwich & \texttt{regularizedNormalMatrix\_eigenvalue\_lower}, \texttt{...eigenvalue\_upper} & Formalized \\
+Eigenvalue-ratio (condition-number style) upper bound in count form & \texttt{regularizedNormalMatrix\_eigen\_ratio\_le\_kappaUpperFromCount} & Formalized \\
+k$_\varepsilon$ ceiling lower-bound identity & \texttt{kEps\_ge\_log\_ratio} & Formalized \\
+Logarithmic-to-geometric $\varepsilon$ step at $k_\varepsilon$ & \texttt{geometric\_term\_le\_eps\_of\_kEps} & Formalized \\
+Assumption-driven $\varepsilon$ guarantee at $k_\varepsilon$ & \texttt{error\_bound\_at\_kEps\_of\_assumptions} & Formalized \\
+Direct $\varepsilon$ guarantee at $k_\varepsilon$ from the log step & \texttt{error\_bound\_at\_kEps} & Formalized \\
+Condition-number bounds (Section 4) & This manuscript, Theorem~\ref{thm:eigen-sandwich} & Mathematical (v2) \\
+$\varepsilon$-iteration and total complexity bounds & Theorem~\ref{thm:pcg-rate-v2}, Cor.~\ref{cor:eps-complexity} & Mathematical (v2) \\
 \bottomrule
 \end{tabular}
 \end{center}
 
 \section{Conclusion}
-We provided a complete operator-level analysis and formal verification pipeline for the RKHS-constrained mode-$k$ CP subproblem with missing entries. The method avoids ambient-size computations, supports PCG with an SPD block preconditioner, and yields explicit complexity bounds per operator application and per iteration. The end-to-end argument is both mathematically explicit and machine-checked in Lean, giving a reproducible proof artifact suitable for rigorous computational mathematics workflows.
+This v2 manuscript upgrades the original verified algorithm analysis into a more standard research-paper form. It preserves machine-checked results for operator design, admissibility, and arithmetic complexity, and adds explicit condition-number and convergence-rate analysis tied to regularization and observation density. The resulting picture is both rigorous and actionable: one gets verified per-iteration complexity plus a mathematically explicit iteration budget for target accuracy.
+
+The analytic logarithmic step in Section~5 (turning $k_\varepsilon$ into the explicit geometric $\varepsilon$ guarantee) is now formalized in Lean. A remaining direction is to formalize the full PCG contraction theorem itself under the same abstract interface, so the entire convergence chain is derived within one machine-checked framework.
 
 \end{document}

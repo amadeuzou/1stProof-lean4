@@ -11,4 +11,4 @@ require mathlib from git
 @[default_target]
 lean_lib Question10 where
   roots := #[`Question10.Defs, `Question10.SparseMatVec, `Question10.PCG,
-    `Question10.Complexity, `Question10.Main]
+    `Question10.Complexity, `Question10.SpectralConvergence, `Question10.Main]
