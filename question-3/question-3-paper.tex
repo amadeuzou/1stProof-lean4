@@ -1,0 +1,249 @@
+\documentclass[11pt]{article}
+
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{amsmath,amsthm,amssymb}
+\usepackage{hyperref}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  citecolor=blue,
+  urlcolor=blue
+}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{assumption}[theorem]{Assumption}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\Snlam}{S_n(\lambda)}
+\newcommand{\rate}{\mathsf{rate}}
+
+\title{Detailed Balance from Exchange Relations:\\
+Formal Verification of the Stationary Measure Construction\\
+for Multi-Species ASEP}
+\author{Amadeu Zou\\\texttt{amadeuzou@gmail.com}}
+\date{February 12, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We present a Lean 4 formalization of a stationary-measure construction for a ring multi-species ASEP model on restricted sectors.
+The core theorem proves a strict local-to-global pipeline:
+exchange relations of Macdonald type imply local detailed balance, which implies global balance and stationarity.
+We then complete the probability layer by proving nonnegativity, normalization, and nontriviality after uniformization to a discrete-time kernel.
+A central design principle is \emph{interface decoupling}: special-function identities are treated as explicit assumptions, while Markov-chain conclusions are derived with no hidden analytic steps.
+This yields a reusable theorem schema suitable for literature transfer:
+any polynomial family satisfying the interface assumptions induces a verified stationary distribution of the form \(F^*/P^*\).
+Code: \url{https://github.com/amadeuzou/1stProof-lean4}.
+\end{abstract}
+
+\section{Introduction}
+The multi-species ASEP (m-ASEP) on finite rings is a standard model in integrable probability and interacting particle systems.
+In many constructions, explicit stationary weights are provided through exchange identities connected to Macdonald-type structures.
+However, the full probability-theoretic chain is often spread across separate arguments:
+local identities, positivity side conditions, normalization, and Markov-kernel validity.
+
+This paper provides a machine-checked consolidation of that chain.
+Our formal development is not aimed at replacing the classical formulas.
+Instead, it provides a precise proof interface that isolates where special-function input is used and certifies the resulting stochastic conclusions.
+
+\paragraph{Contributions.}
+\begin{enumerate}
+\item A formal local-to-global theorem:
+exchange relations imply detailed balance and stationarity.
+\item A formal probability completion:
+nonnegative rates, normalized stationary law, and nontrivial transitions.
+\item A literature-facing interface theorem:
+under explicit assumptions on \(F^*\) and \(P^*\), we obtain a certified discrete Markov chain with stationary law \(F^*/P^*\).
+\item A complete Lean 4 artifact with successful project build and no unfinished placeholders.
+\end{enumerate}
+
+\section{Model on Restricted Sectors}
+\subsection{State space}
+Fix \(m,n \ge 2\), and let \(\lambda\) be a bounded word of length \(n\) over species set \(\{0,\dots,m-1\}\), satisfying the restricted-sector conditions used in the formal model.
+The state space is
+\[
+\Snlam := \{\sigma\lambda : \sigma \in \mathfrak{S}_n\},
+\]
+implemented as a finite subtype (\texttt{SnLambdaState}).
+
+\subsection{Local transitions}
+For an adjacent index \(a=(i,i+1)\), define
+\[
+\rate^+_a = t x_i - x_{i+1}, \qquad
+\rate^-_a = x_i - t x_{i+1}, \qquad
+\mathsf{ratio}_a = \frac{\rate^+_a}{\rate^-_a}.
+\]
+The local edge kernel (\texttt{edgeKernel}) contributes only when \(w'\) is obtained from \(w\) by the adjacent swap at \(a\).
+The full continuous-time rate (\texttt{transitionRate}) is the finite sum over all adjacent \(a\).
+
+\section{Exchange Relations and Balance Equations}
+\subsection{Exchange assumption}
+\begin{definition}[Exchange relation]
+For a weight function \(\pi\), the exchange relation at adjacent inversion \(a\) is
+\[
+\pi(s_a w) = \mathsf{ratio}_a \,\pi(w).
+\]
+\end{definition}
+
+\subsection{Local detailed balance}
+\begin{proposition}[Local detailed balance]
+\label{prop:local-db}
+Under denominator nonvanishing and the exchange relation,
+\[
+\pi(w)\,q(w,s_aw)=\pi(s_aw)\,q(s_aw,w)
+\]
+holds for each adjacent swap edge.
+\end{proposition}
+
+\begin{proof}[Proof sketch]
+The Lean theorem \texttt{Question3.local\_detailed} proves a direct algebraic identity by rewriting both sides into the same rational expression in \((x,t)\), using the explicit edge-rate formulas and the exchange ratio.
+\end{proof}
+
+\subsection{Global balance}
+\begin{theorem}[Global balance from local balance]
+\label{thm:global-balance}
+If Proposition~\ref{prop:local-db} holds for all adjacent edges, then
+\[
+\sum_{u\in\Snlam}\pi(u)\,q(u,v)
+=
+\pi(v)\sum_{z\in\Snlam}q(v,z),
+\qquad \forall v\in\Snlam.
+\]
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+Summing the local edge equalities over adjacent indices and states gives the global identity.
+This is formalized in \texttt{Question3.stationary\_global\_balance\_explicit}.
+\end{proof}
+
+\section{Probability Completion}
+\subsection{Rate nonnegativity interface}
+\begin{definition}[Rate-pair nonnegativity]
+\texttt{RatePairNonneg} requires \(\rate^+_a \ge 0\) and \(\rate^-_a \ge 0\) for all adjacent \(a\).
+\end{definition}
+
+\begin{proposition}
+Under \texttt{RatePairNonneg}, all edge kernels and all total transition rates are nonnegative.
+\end{proposition}
+
+\begin{proof}[Formal anchors]
+See the nonnegativity lemmas in \texttt{Question3}
+(listed explicitly in Section~6).
+\end{proof}
+
+\subsection{Uniformization and discrete kernel}
+Given a finite continuous-time rate \(q\), define a bound \(B>0\) and
+\[
+P(u,v)=\frac{q(u,v)}{B}+\mathbf{1}_{u=v}
+\left(1-\frac{\sum_z q(u,z)}{B}\right).
+\]
+The formal development proves:
+\begin{enumerate}
+\item \(P(u,v)\ge 0\),
+\item \(\sum_v P(u,v)=1\),
+\item stationarity transfer from \(q\) to \(P\),
+\item existence of a strictly positive off-diagonal transition.
+\end{enumerate}
+
+These are implemented by
+four kernel lemmas in
+\texttt{Macdonald.Bridge.FinalTheorem}
+(listed explicitly in Section~6).
+
+\section{Literature Interface and Main Theorems}
+\subsection{Interface theorem}
+The structure \texttt{FstarCandidateOnRestricted} packages:
+restricted-sector data, exchange-side hypotheses, a candidate \(\pi\), and nontrivial local dynamics.
+The literature-facing closure theorem is:
+
+\begin{theorem}[Conditional closure theorem]
+\label{thm:literature-closure}
+The literature-closure theorem states that:
+if a candidate satisfies exchange assumptions, rate-pair nonnegativity, and
+normalized nonnegative \(\pi\), then there exists a discrete-time Markov chain
+on \(\Snlam\) whose stationary law is exactly \(F^*/P^*\), with nontrivial
+off-diagonal dynamics.
+\end{theorem}
+
+\subsection{Repository-final bundled statements}
+For the canonical restricted \(q=1\) model, the project provides explicit final theorems:
+\begin{enumerate}
+\item \texttt{question3\_complete\_restricted\_qOne} (continuous time),
+\item \texttt{question3\_complete\_restricted\_qOne\_discrete} (discrete time).
+\end{enumerate}
+
+Each theorem packages:
+nonnegative kernel, stationary distribution, explicit \(F^*/P^*\) formula, and nontrivial transitions.
+
+\section{Lean Theorem Map and Verification Status}
+\begin{center}
+\small
+\begin{tabular}{|p{0.58\linewidth}|p{0.34\linewidth}|}
+\hline
+\textbf{Lean theorem} & \textbf{Mathematical role} \\
+\hline
+\texttt{Question3.local\_detailed} &
+Local detailed balance identity for adjacent swaps. \\
+\hline
+\texttt{Question3.stationary\_global\_balance\_explicit} &
+Global balance equation from local identities. \\
+\hline
+\texttt{Question3.transitionRate\_nonneg\_of\_ratePairNonneg} &
+Kernel nonnegativity from rate-pair assumptions. \\
+\hline
+\shortstack[l]{\texttt{Macdonald.Bridge.paper\_main\_restricted\_qOne\_}\\\texttt{discrete\_of\_literature\_assumptions}} &
+Conditional literature-interface closure theorem. \\
+\hline
+\shortstack[l]{\texttt{Macdonald.Bridge.question3\_complete\_}\\\texttt{restricted\_qOne\_discrete}} &
+Final discrete stationary-chain theorem. \\
+\hline
+\shortstack[l]{\texttt{Macdonald.Bridge.question3\_complete\_}\\\texttt{restricted\_qOne}} &
+Final continuous-time packaged theorem. \\
+\hline
+\end{tabular}
+\end{center}
+
+Repository verification checklist:
+\begin{enumerate}
+\item \texttt{lake build} succeeds on the project.
+\item no \texttt{sorry}, \texttt{admit}, or custom \texttt{axiom} placeholders appear in project Lean files.
+\end{enumerate}
+
+\section{Discussion}
+The principal methodological contribution is a clear separation between:
+\begin{enumerate}
+\item algebraic identities from special-function theory,
+\item stochastic consequences for Markov-chain stationarity.
+\end{enumerate}
+This separation makes the proof transportable:
+new polynomial models can be plugged in by proving the interface assumptions, after which the probability theorem follows automatically.
+
+A natural next step is full in-system formalization of interpolation Macdonald polynomial constructions, so that exchange and positivity assumptions become internal derivations rather than external interfaces.
+
+\begin{thebibliography}{99}
+
+\bibitem{Liggett}
+T.~M.~Liggett,
+\emph{Interacting Particle Systems},
+Springer, 1985.
+
+\bibitem{Macdonald}
+I.~G.~Macdonald,
+\emph{Symmetric Functions and Hall Polynomials},
+2nd ed., Oxford University Press, 1995.
+
+\bibitem{Mathlib}
+The mathlib Community,
+\emph{The Lean Mathematical Library (mathlib4)},
+\url{https://github.com/leanprover-community/mathlib4}.
+
+\end{thebibliography}
+
+\end{document}

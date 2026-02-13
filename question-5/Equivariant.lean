@@ -1,0 +1,14 @@
+import Equivariant.IndexingSystem
+import Equivariant.Spectra.Definition
+import Equivariant.Spectra.Orthogonal
+import Equivariant.Slice.Filtration
+import Equivariant.Slice.Syntax
+import Equivariant.Slice.Generators
+import Equivariant.FixedPoints.Geometric
+import Equivariant.FixedPoints.Geo
+import Equivariant.FixedPoints.Isotropy
+import Equivariant.Slice.MainTheorem
+import Equivariant.Instances.ToyModel
+import Equivariant.Instances.MainPayloadModel
+import Equivariant.MainResult
+import Equivariant.Paper
