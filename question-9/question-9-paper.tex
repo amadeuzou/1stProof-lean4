@@ -1,0 +1,256 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+\usepackage{microtype}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\Idx}{\mathrm{Idx}}
+
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\theoremstyle{remark}
+\newtheorem{remark}[theorem]{Remark}
+
+\title{Formalizing Multi-View Geometry: Intrinsic Characterizations and Boundary Cases for Rank-1 Tensors}
+\author{Amadeu Zou\\\texttt{amadeuzou@gmail.com}}
+\date{February 13, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We formalize in Lean 4 a multi-view geometry question about algebraic relations among $4\times 4$
+determinants built from $n$ Zariski-generic camera matrices $A^{(1)},\dots,A^{(n)}\in\R^{3\times 4}$.
+The question asks for a polynomial map on the scaled tensor family $Y=\lambda\cdot Q(A)$ that
+vanishes if and only if the scaling tensor $\lambda\in\R^{n\times n\times n\times n}$ is separable
+(rank-$1$ outer product), with degrees uniform in~$n$ and independent of~$A$.
+Our Lean development gives (i) an intrinsic, explicit quadratic characterization of separability on
+the $\lambda$-space, (ii) a camera-normalized (camera-dependent) polynomial test of uniform degree
+for inputs $Y=\lambda\cdot Q(A)$ under a genericity condition, and (iii) a conditional negative
+result at $n=5$: a natural Pl\"ucker/``swap-balance'' family of degree-$2$ constraints is neither
+necessary nor sufficient to characterize separability. All claims are mechanically verified by Lean
+with no \texttt{sorry} and only standard axioms.
+Taken together, (i)--(ii) provide a ground-truth benchmark, and (iii) shows that the gap between
+``knowing $A$'' and ``not knowing $A$'' is a real algebraic obstruction rather than a missing trick.
+Code: \url{https://github.com/amadeuzou/1stProof-lean4}.
+\end{abstract}
+
+\section{Problem and Formal Model}
+Fix $n\ge 5$ and camera matrices $A^{(1)},\dots,A^{(n)}\in\R^{3\times 4}$. For
+$\alpha,\beta,\gamma,\delta\in[n]$ and $i,j,k,\ell\in[3]$, define a tensor
+$Q^{(\alpha\beta\gamma\delta)}\in \R^{3\times 3\times 3\times 3}$ by
+\[
+Q^{(\alpha\beta\gamma\delta)}_{i j k \ell}
+  = \det\!\bigl[
+    A^{(\alpha)}(i,:);\,
+    A^{(\beta)}(j,:);\,
+    A^{(\gamma)}(k,:);\,
+    A^{(\delta)}(\ell,:)
+  \bigr],
+\]
+where semicolon denotes vertical concatenation of rows. The input space of the question is the
+concatenation of all entries of all $Q^{(\alpha\beta\gamma\delta)}$, hence dimension $81n^4$.
+
+We study a scaling tensor $\lambda\in\R^{n\times n\times n\times n}$ applied by
+\[
+Y^{(\alpha\beta\gamma\delta)}_{i j k \ell} = \lambda_{\alpha\beta\gamma\delta}\,
+Q^{(\alpha\beta\gamma\delta)}_{i j k \ell}.
+\]
+Following the statement, we restrict to indices that are \emph{valid} (not all identical):
+\begin{definition}[Valid quadruple and nonzero condition]
+A quadruple $(a,b,c,d)\in [n]^4$ is \emph{valid} if it is not of the form $a=b=c=d$.
+We say $\lambda$ is \emph{nonzero on valid} if $\lambda_{a b c d}\ne 0$ for all valid $(a,b,c,d)$.
+\end{definition}
+
+\begin{definition}[Separable scaling tensor]
+The tensor $\lambda$ is \emph{separable} if there exist $u,v,w,x\in(\R^\ast)^n$ such that
+\[
+\lambda_{\alpha\beta\gamma\delta} = u_\alpha v_\beta w_\gamma x_\delta
+\qquad\text{for all valid }(\alpha,\beta,\gamma,\delta).
+\]
+\end{definition}
+
+The original question asks whether there exists a polynomial map $\mathbf F:\R^{81n^4}\to\R^N$,
+independent of $A$, of degree bounded independently of $n$, such that for Zariski-generic $A$ and
+$Y=\lambda\cdot Q(A)$,
+\[
+\mathbf F(Y)=0 \iff \lambda\text{ is separable.}
+\]
+
+\paragraph{Lean encoding.}
+We use $\Idx(n)=\mathrm{Fin}\,n$ for indices, and define validity and separability as above in
+\nolinkurl{Question9/Defs.lean}. The tensors $Q$ are defined as actual determinants in
+\nolinkurl{Question9/Geometry.lean}, using a $4\times 4$ matrix assembled from four camera rows.
+
+\section{Intrinsic Quadratic Characterization on \texorpdfstring{$\lambda$}{lambda}}
+Fix four \emph{anchors} $a_0,b_0,c_0,d_0\in[n]$ which are pairwise distinct (possible since $n\ge 5$).
+Consider the following bilinear identity families in~$\lambda$:
+\begin{align*}
+(\mathrm{H1})\quad &
+\lambda_{a b c d}\lambda_{a_0 b_0 c_0 d_0}
+  = \lambda_{a b c_0 d_0}\lambda_{a_0 b_0 c d}
+&&\text{for all valid }(a,b,c,d),\\
+(\mathrm{H2})\quad &
+\lambda_{a b c_0 d_0}\lambda_{a_0 b_0 c_0 d_0}
+  = \lambda_{a b_0 c_0 d_0}\lambda_{a_0 b c_0 d_0}
+&&\text{for all }a,b,\\
+(\mathrm{H3})\quad &
+\lambda_{a_0 b_0 c d}\lambda_{a_0 b_0 c_0 d_0}
+  = \lambda_{a_0 b_0 c d_0}\lambda_{a_0 b_0 c_0 d}
+&&\text{for all }c,d.
+\end{align*}
+
+\begin{theorem}[Intrinsic characterization of $\lambda$ (uniform quadratic test)]\label{thm:quadratic}
+Let $n\ge 5$ and let $\lambda\in\R^{n\times n\times n\times n}$ be nonzero on valid indices.
+Then $\lambda$ is separable if and only if \emph{all} identities \textup{(H1)--(H3)} hold.
+\end{theorem}
+
+\begin{proof}[Proof sketch (Lean-verified)]
+If $\lambda_{\alpha\beta\gamma\delta}=u_\alpha v_\beta w_\gamma x_\delta$, then each identity is a
+tautology after cancellation and commutativity, which is proved in Lean by rewriting and
+the tactics \texttt{simp} and \texttt{ring} (see \nolinkurl{Question9/Bridge.lean}).
+Conversely, assuming \textup{(H1)--(H3)} and nonzero-on-valid, one reconstructs $u,v,w,x$ by fixing
+the anchored slices $(\cdot,b_0,c_0,d_0)$, $(a_0,\cdot,c_0,d_0)$, etc., and uses the bilinear
+identities to show every valid entry factors accordingly; Lean carries this as a chain of lemmas in
+\nolinkurl{Question9/Characterization.lean} and packages the result as a finite quadratic coordinate map
+\nolinkurl{hConditionResidualFin} in \nolinkurl{Question9/HFamily.lean}.
+\end{proof}
+
+\begin{corollary}[Uniform quadratic polynomial map on $\lambda$]\label{cor:uniform-lambda-map}
+For each $n\ge 5$ there exists an explicit polynomial map $F_\lambda:\R^{n^4}\to\R^m$ of total
+degree $2$ (independent of $n$) such that for every $\lambda$ nonzero on valid indices,
+\[
+F_\lambda(\lambda)=0 \iff \lambda\text{ is separable.}
+\]
+\end{corollary}
+
+\begin{proof}
+This is \nolinkurl{exists_uniform_quadratic_hCondition_map} in \nolinkurl{Question9/HFamily.lean},
+obtained by collecting the finitely many residuals of \textup{(H1)--(H3)} into a coordinate map.
+\end{proof}
+
+\section{A Camera-Normalized Polynomial Test on the Input Space}
+To connect with the scaled tensor input $Y=\lambda\cdot Q(A)$, we need to eliminate the unknown
+$Q(A)$. We use a genericity hypothesis ensuring certain anchor entries of $Q(A)$ are nonzero.
+
+\begin{definition}[Generic strong condition]\label{def:generic-strong}
+We say $A$ is \emph{generic strong} if every entry of $Q(A)$ (for every $(\alpha,\beta,\gamma,\delta,i,j,k,\ell)$)
+is nonzero.
+\end{definition}
+
+\begin{remark}[Geometric meaning of generic strong]
+Each $Q^{(\alpha\beta\gamma\delta)}_{i j k \ell}$ is the determinant of the $4\times 4$ matrix obtained by stacking
+four row vectors in $\R^4$, one chosen from each of the cameras $A^{(\alpha)},A^{(\beta)},A^{(\gamma)},A^{(\delta)}$.
+Thus $A$ being generic strong means \emph{every such choice} produces four linearly independent row vectors.
+Equivalently, all these $4\times 4$ minors avoid the determinantal hypersurface; this excludes degenerate
+configurations where some selected quadruple of rows becomes linearly dependent. In the Lean development this is
+the predicate \texttt{IsGenericStrong} (\texttt{Question9/Generic.lean}), and it is used to ensure the anchor
+entries needed for normalization are nonzero.
+\end{remark}
+
+\begin{theorem}[Camera-dependent characterization (camera-fixed polynomial iff test)]\label{thm:camera-fixed}
+Fix $n\ge 5$ and $A\in(\R^{3\times 4})^n$ generic strong. There exists an explicit polynomial map
+$F_A:\R^{81n^4}\to\R^m$ of total degree $4$ such that for every $\lambda$ nonzero on valid indices,
+with $Y=\lambda\cdot Q(A)$, we have
+\[
+F_A(Y)=0 \iff \lambda\text{ is separable.}
+\]
+\end{theorem}
+
+\begin{proof}[Proof sketch (Lean-verified)]
+One can recover $\lambda_{a b c d}$ from anchor entries via
+$\lambda_{a b c d} = Y_{a b c d}/Q(A)_{a b c d}$. To avoid division, we cross-multiply in the
+quadratic residuals \textup{(H1)--(H3)}, producing degree-$4$ polynomials in the variables
+$Y$ and the fixed coefficients $Q(A)$.
+This construction is formalized as \texttt{cameraNormalizedHPolyFin} in
+\texttt{Question9/NormalizedPolynomialFamily.lean}, and the iff statement is
+\texttt{cameraNormalizedHPolyFin\_scaled\_iff\_separable\_of\_genericStrong}.
+\end{proof}
+
+\begin{remark}
+The map $F_A$ depends on the camera $A$ through $Q(A)$, and therefore does \emph{not} resolve the
+original question, which asks for an $A$-independent polynomial map on the $Y$-space.
+Theorem~\ref{thm:camera-fixed} should be read as a conditional normalization result: once $Q(A)$ is
+available, separability of the unknown scaling tensor becomes algebraically decidable by bounded-degree
+polynomials.
+\end{remark}
+
+\section{Boundary Cases: A Conditional Negative Result at \texorpdfstring{$n=5$}{n=5}}
+A natural approach is to use only Pl\"ucker-type quadratic relations on $Y$ that are independent of
+$A$, hoping they characterize separability of~$\lambda$. We formalize a concrete degree-$2$ family
+\texttt{swapZeroMapFin} built from a finite list of Pl\"ucker residuals (see
+\texttt{Question9/Main.lean}, \texttt{Question9/Plucker.lean}).
+
+\begin{theorem}[Counterexample at $n=5$ (failure of a natural $A$-independent family)]\label{thm:counterexample}
+Assume there exists a camera configuration $A\in(\R^{3\times 4})^5$ that is generic strong.
+Then the following hold.
+\begin{enumerate}
+\item \textup{(Forward failure)} There exists a separable $\lambda$ such that for $Y=\lambda\cdot Q(A)$,
+not all coordinates of \texttt{swapZeroMapFin} vanish on~$Y$.
+\item \textup{(Reverse failure)} There exists a non-separable $\lambda$ that satisfies all
+swap-balance constraints, hence any reverse implication based solely on this family fails.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}[Lean-verified]
+Both statements are proved in \texttt{Question9/Counterexample.lean}.
+The forward failure uses an explicit separable tensor \texttt{sepLam5} and derives a contradiction
+from one concrete swap-balance equality, with arithmetic discharged by \texttt{norm\_num} and index
+facts by \texttt{native\_decide}.
+The reverse failure uses an explicit sign-valued tensor \texttt{counterLam5Real} that satisfies all
+swap-balance residuals but violates a bridge consistency condition, implying it is not separable.
+Formally: \nolinkurl{not_swapZeroForwardCompleteness5_of_genericStrong_exists} and
+\nolinkurl{not_bridgeRecoverability5_of_genericStrong_exists}.
+\end{proof}
+
+\section{Discussion and Outlook}
+The Lean development establishes a sharp and fully verified boundary:
+\begin{itemize}
+\item On the $\lambda$-space, separability has a uniform, explicit quadratic characterization
+(Theorem~\ref{thm:quadratic}).
+\item For fixed cameras, this can be transported to $Y=\lambda\cdot Q(A)$ by normalization, yielding a
+bounded-degree polynomial test (Theorem~\ref{thm:camera-fixed}).
+\item However, for $n=5$ a natural $A$-independent degree-$2$ Pl\"ucker/swap-balance family fails in
+both directions (Theorem~\ref{thm:counterexample}), suggesting that any fully intrinsic map
+$\mathbf F$ must go beyond these constraints.
+\end{itemize}
+Whether there exists an $A$-independent polynomial map on the full $Y$-space, with degrees uniform in
+$n$, remains open in our formalization.
+\paragraph{Ground truth vs.\ intrinsic constraints.}
+Theorems~\ref{thm:quadratic} and~\ref{thm:camera-fixed} serve as a verified ``ground truth'': once the scaling
+tensor $\lambda$ (or a camera-dependent normalization of it) is available, separability can be decided by
+explicit bounded-degree polynomials. Theorem~\ref{thm:counterexample} then clarifies that restricting to
+camera-independent degree-$2$ constraints of the swap-balance type loses essential information in general.
+\paragraph{On the case $n>5$.}
+Our formal counterexample is specific to $n=5$ and to a concrete degree-$2$ Pl\"ucker/swap-balance family.
+For larger $n$, there are more index choices and hence potentially more $A$-independent constraints one could
+impose on $Y$. It is therefore plausible that the obstruction exhibited at $n=5$ may disappear after enlarging
+the family of constraints, or after passing to sufficiently large $n$.
+At present we do not have a positive existence theorem for any $n>5$, nor a general impossibility theorem.
+We view the determination of whether there exists an $n_0$ such that an $A$-independent bounded-degree test
+exists for all $n\ge n_0$ as an open problem.
+
+\section*{Reproducibility}
+The full Lean 4 code is in the folder \texttt{Question9/}. To check all theorems:
+\begin{verbatim}
+cd question-9
+source "$HOME/.elan/env"
+lake build
+\end{verbatim}
+Key entry points:
+\begin{itemize}
+\item \nolinkurl{Question9/HFamily.lean} (quadratic characterization)
+\item \nolinkurl{Question9/NormalizedPolynomialFamily.lean} (camera-normalized polynomial test)
+\item \nolinkurl{Question9/Counterexample.lean} (negative results at $n=5$)
+\end{itemize}
+
+\end{document}
