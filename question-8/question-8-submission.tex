@@ -1,0 +1,193 @@
+\documentclass[11pt]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{array}
+
+\geometry{margin=1in}
+\hypersetup{colorlinks=true,linkcolor=blue,citecolor=blue,urlcolor=blue}
+
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{remark}[theorem]{Remark}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\wstd}{\omega_{\mathrm{std}}}
+
+\title{A Constructive Lean 4 Counterexample to Universal Lagrangian Smoothing\\
+for Polyhedral Lagrangian Surfaces in $\R^4$}
+\author{Amadeu Zou\\\texttt{amadeuzou@gmail.com}}
+\date{February 12, 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+We give a constructive negative answer to the following question: if a polyhedral Lagrangian surface
+$K\subset \R^4$ has exactly four faces meeting at each vertex, must $K$ admit a Lagrangian smoothing?
+Our approach differs from prior existence-axiom styles by explicitly constructing coordinates of an
+octahedron-like model and formally verifying all local geometric/combinatorial constraints in Lean 4.
+The non-smoothability step is organized via a parameterized external obstruction
+\(\texttt{NoCompactLagrangianSphereInR4}\), representing a standard Gromov-type non-existence input.
+This yields a machine-checked conditional theorem schema and a complete formal counterexample pipeline.
+Code: \url{https://github.com/amadeuzou/1stProof-lean4}.
+\end{abstract}
+
+\section{Problem Statement}
+We study the question (verbatim mathematical content of \texttt{question-8.tex}):
+
+\begin{quote}
+Let $K$ be a polyhedral Lagrangian surface in $\R^4$ such that exactly $4$ faces meet at every vertex.
+Does $K$ necessarily have a Lagrangian smoothing?
+\end{quote}
+
+The main result is negative, in a constructive and formally verified sense.
+
+\section{Symplectic Setup and Formal Encoding}
+Write $\R^4\cong \R^2\times\R^2$ with coordinates $(x_1,y_1,x_2,y_2)$ and standard symplectic form
+\[
+\wstd = dx_1\wedge dy_1 + dx_2\wedge dy_2.
+\]
+For vectors $u,v\in\R^4$ (Lean type \texttt{R4 := Fin 4 -> R}), we use
+\[
+\wstd(u,v)=u_0v_1-u_1v_0+u_2v_3-u_3v_2.
+\]
+For an oriented triangle $(A,B,C)$, define
+\[
+\Omega(A,B,C):=\wstd(B-A,C-A).
+\]
+A face is Lagrangian iff its symplectic area vanishes.
+
+In Lean, the core development is in \texttt{Question8/Core.lean}; it contains no global axioms.
+The cited non-existence input is represented by the explicit parameter
+\[
+\texttt{NoCompactLagrangianSphereInR4}
+:= \neg\exists L,\; L\text{ compact}\wedge L\cong S^2\wedge L\text{ Lagrangian in }(\R^4,\wstd).
+\]
+
+\section{Constructive Octahedral Model}
+\subsection{Explicit Coordinates}
+We define six vertices:
+\[
+\begin{aligned}
+P&=(0,0,0,0),\qquad N=(-1,1,-1,1),\\
+Q_1&=(1,0,0,0),\quad Q_2=(0,0,1,0),\quad Q_3=(0,1,0,0),\quad Q_4=(0,0,0,1).
+\end{aligned}
+\]
+Faces are the eight triangles
+\[
+\begin{aligned}
+&(P,Q_1,Q_2),(P,Q_2,Q_3),(P,Q_3,Q_4),(P,Q_4,Q_1),\\
+&(N,Q_1,Q_2),(N,Q_2,Q_3),(N,Q_3,Q_4),(N,Q_4,Q_1).
+\end{aligned}
+\]
+This is the suspension of a 4-cycle and gives an octahedron-type combinatorics.
+
+\subsection{Local Combinatorics and Embeddedness Certificates}
+The Lean development explicitly verifies:
+\begin{enumerate}[label=(\roman*)]
+\item each vertex has exactly four incident faces (\texttt{octahedron\_four\_faces});
+\item each edge has exactly two incident faces (\texttt{octahedron\_each\_edge\_has\_two\_incident\_faces});
+\item each triangular face has three distinct vertices (\texttt{oct\_face\_distinct\_vertices});
+\item coordinate map injectivity (\texttt{OctCoords\_injective});
+\item Euler count $V-E+F=6-12+8=2$ (\texttt{octahedron\_euler\_char\_two}).
+\end{enumerate}
+These are assembled into
+\texttt{OctTopologicalSubmanifoldCertificate} and used to build
+\texttt{octahedronPoly} as a fully explicit counterexample candidate.
+
+\section{Verification of \texttt{OctFacesAreLagrangian}}
+Define \texttt{OctFaceArea(f)} as $\Omega(A_f,B_f,C_f)$ for each listed face.
+The theorem
+\[
+\texttt{oct\_faces\_are\_lagrangian}:
+\forall f,\ \texttt{OctFaceArea}(f)=0
+\]
+is proven by exact symbolic computation (Lean tactic \texttt{norm\_num} over explicit coordinates).
+
+For illustration:
+\[
+\Omega(P,Q_1,Q_2)=\wstd((1,0,0,0),(0,0,1,0))=0,
+\]
+and similarly for each of the remaining seven faces.
+An independent script (\texttt{scripts/verify\_octa\_lagrangian.py}) confirms all eight values are zero.
+
+\section{Obstruction Architecture: Parameterized Gromov Input}
+A key design decision is to keep the core proof independent of any global axiom and expose the
+analytic obstruction as a parameter. In Lean:
+\begin{itemize}
+\item \texttt{Question8/Core.lean}: constructive geometry + conditional contradiction chain;
+\item \texttt{Question8/ExternalGromov.lean}: citation-facing theorems taking
+\(h\_{\mathrm{NoSphere}}:\texttt{NoCompactLagrangianSphereInR4}\).
+\end{itemize}
+
+The central conditional contradiction is:
+\begin{theorem}[Core conditional non-smoothability]
+Assume \(h\_{\mathrm{NoSphere}}:\texttt{NoCompactLagrangianSphereInR4}\).
+Then the explicit octahedral polyhedral Lagrangian \(K=\texttt{octahedronPoly}\) has no Lagrangian smoothing:
+\[
+\neg\,\texttt{HasLagrangianSmoothing}(K).
+\]
+\end{theorem}
+
+\begin{proof}[Proof sketch]
+If a smoothing existed, type-preservation in the smoothing structure yields a smooth Lagrangian
+sphere. Compactness and Lagrangian properties are carried by the smoothing witness fields.
+This contradicts \(h\_{\mathrm{NoSphere}}\).
+\end{proof}
+
+Hence:
+\begin{theorem}[Main conditional answer to Question 8]
+Assume \(h\_{\mathrm{NoSphere}}:\texttt{NoCompactLagrangianSphereInR4}\). Then
+\[
+\exists K,\ \texttt{FourFacesMeeting}(K)\ \wedge\ \neg\texttt{HasLagrangianSmoothing}(K).
+\]
+Equivalently, the universal positive claim is false:
+\[
+\neg\forall K,\ K\text{ face-Lagrangian}\to \texttt{FourFacesMeeting}(K)
+\to\texttt{HasLagrangianSmoothing}(K).
+\]
+\end{theorem}
+
+\section{Contributions}
+Compared with existence-axiom approaches, this work contributes:
+\begin{enumerate}[label=(C\arabic*)]
+\item \textbf{Constructive approach}: explicit coordinate construction of the counterexample geometry;
+\item \textbf{Computational verification}: machine-checked and script-checked vanishing of all
+face symplectic areas (\texttt{OctFacesAreLagrangian});
+\item \textbf{Architecture}: separation of constructive core and external obstruction via parameterization;
+\item \textbf{Formal counterexample geometry}: full local geometric/combinatorial certificates needed
+for the negative answer are explicitly formalized.
+\end{enumerate}
+
+\section{Reproducibility}
+Repository: \url{https://github.com/amadeuzou/1stProof-lean4}.
+A one-shot verification script is provided:
+\begin{verbatim}
+./scripts/verify_formal_status.sh
+\end{verbatim}
+It checks build success, absence of \texttt{axiom}/\texttt{sorry}/\texttt{admit}, and geometric sanity tests.
+
+\section{External Citation as Standard Parameter}
+In this formalization, the Gromov non-existence statement is used as a
+\emph{standard external parameter} (not re-proved inside the current Lean development):
+\begin{quote}
+No compact smooth Lagrangian $2$-sphere exists in standard symplectic $\R^4$.
+\end{quote}
+This corresponds to the cited pseudoholomorphic-curves obstruction framework
+(see \cite{Gromov1985PseudoHolomorphic}).
+
+\bibliographystyle{plain}
+\bibliography{question-8-references}
+
+\end{document}
